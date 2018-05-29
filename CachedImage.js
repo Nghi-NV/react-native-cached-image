@@ -181,7 +181,6 @@ class CachedImage extends React.Component {
                             // response.path is the path of the new image
                             // response.name is the name of the new image with the extension
                             // response.size is the size of the new image
-                            console.log('ImageResizer', response)
 
                             this.safeSetState({
                                 cachedImagePath: response.path

@@ -9,8 +9,12 @@ const PropTypes = require('prop-types');
 const ImageCacheManagerOptionsPropTypes = require('./ImageCacheManagerOptionsPropTypes');
 
 const flattenStyle = ReactNative.StyleSheet.flatten;
+const Image = ReactNative.Image;
+const Dimensions = ReactNative.Dimensions;
 
 const ImageCacheManager = require('./ImageCacheManager');
+import ImageResizer from 'react-native-image-resizer';
+const SCREEN = Dimensions.get('window');
 
 const {
     View,
@@ -45,6 +49,7 @@ class CachedImage extends React.Component {
 
     static propTypes = {
         renderImage: PropTypes.func.isRequired,
+        autoResize: PropTypes.bool,
         activityIndicatorProps: PropTypes.object.isRequired,
 
         // ImageCacheManager options
@@ -52,8 +57,9 @@ class CachedImage extends React.Component {
     };
 
     static defaultProps = {
-            renderImage: props => (<ImageBackground imageStyle={props.style} ref={CACHED_IMAGE_REF} {...props} />),
-            activityIndicatorProps: {},
+        renderImage: props => (<ImageBackground imageStyle={props.style} ref={CACHED_IMAGE_REF} {...props} />),
+        autoResize: true,
+        activityIndicatorProps: {},
     };
 
     static contextTypes = {
@@ -144,9 +150,51 @@ class CachedImage extends React.Component {
 
         imageCacheManager.downloadAndCacheUrl(url, options)
             .then(cachedImagePath => {
-                this.safeSetState({
-                    cachedImagePath
-                });
+                if (this.props.autoResize) {
+                    let sourceImage = 'file://' + cachedImagePath
+                    let imageUri = sourceImage
+                    let newWidth = 0
+                    let newHeight = 0
+                    let compressFormat = 'JPEG'
+                    let quality = 100
+                    let rotation = 0
+                    let outputPath = undefined
+
+                    Image.getSize(sourceImage, (width, height) => {
+                        if (width == 0 || height == 0) {
+                            return
+                        }
+
+                        let scale = width / height
+                        if (width < SCREEN.width) {
+                            this.safeSetState({
+                                cachedImagePath
+                            });
+                            return;
+                        }
+
+                        newWidth = Math.min(width, SCREEN.width)
+                        newHeight = newWidth / scale
+
+                        ImageResizer.createResizedImage(imageUri, newWidth, newHeight, compressFormat, quality, rotation, outputPath).then((response) => {
+                            // response.uri is the URI of the new image that can now be displayed, uploaded...
+                            // response.path is the path of the new image
+                            // response.name is the name of the new image with the extension
+                            // response.size is the size of the new image
+                            console.log('ImageResizer', response)
+
+                            this.safeSetState({
+                                cachedImagePath: response.path
+                            });
+                        }).catch((err) => {
+                            console.log('catch', err)
+                        });
+                    });
+                } else {
+                    this.safeSetState({
+                        cachedImagePath
+                    });
+                }
             })
             .catch(err => {
                 // console.warn(err);
@@ -206,7 +254,7 @@ class CachedImage extends React.Component {
             return (
                 <ActivityIndicator
                     {...activityIndicatorProps}
-                    style={[imageStyle, activityIndicatorStyle]}/>
+                    style={[imageStyle, activityIndicatorStyle]} />
             );
         }
         // otherwise render an image with the defaultSource with the ActivityIndicator on top of it
@@ -218,11 +266,11 @@ class CachedImage extends React.Component {
             children: (
                 LoadingIndicator
                     ? <View style={[imageStyle, activityIndicatorStyle]}>
-                    <LoadingIndicator {...activityIndicatorProps} />
-                </View>
+                        <LoadingIndicator {...activityIndicatorProps} />
+                    </View>
                     : <ActivityIndicator
-                    {...activityIndicatorProps}
-                    style={activityIndicatorStyle}/>
+                        {...activityIndicatorProps}
+                        style={activityIndicatorStyle} />
             )
         });
     }

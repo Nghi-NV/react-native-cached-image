@@ -13,6 +13,7 @@ const Image = ReactNative.Image;
 const Dimensions = ReactNative.Dimensions;
 
 const ImageCacheManager = require('./ImageCacheManager');
+const fsUtils = require('./utils/fsUtils');
 import ImageResizer from 'react-native-image-resizer';
 const SCREEN = Dimensions.get('window');
 
@@ -72,7 +73,8 @@ class CachedImage extends React.Component {
         this.state = {
             isCacheable: true,
             cachedImagePath: null,
-            networkAvailable: true
+            networkAvailable: true,
+            resized: false
         };
 
         this.getImageCacheManagerOptions = this.getImageCacheManagerOptions.bind(this);
@@ -93,11 +95,14 @@ class CachedImage extends React.Component {
                     networkAvailable: isConnected
                 });
             });
-
-        this.processSource(this.props.source);
     }
 
     componentWillUnmount() {
+
+        if (this.state.resized && this.state.cachedImagePath) {
+            fsUtils.deleteFile(this.state.cachedImagePath)
+        }
+
         this._isMounted = false;
         NetInfo.isConnected.removeEventListener('connectionChange', this.handleConnectivityChange);
     }
@@ -144,6 +149,7 @@ class CachedImage extends React.Component {
     }
 
     processSource(source) {
+
         const url = _.get(source, ['uri'], null);
         const options = this.getImageCacheManagerOptions();
         const imageCacheManager = this.getImageCacheManager();
@@ -161,37 +167,61 @@ class CachedImage extends React.Component {
                     let outputPath = undefined
 
                     Image.getSize(sourceImage, (width, height) => {
-                        if (width == 0 || height == 0) {
+                        if (width <= this.width * 3 || height <= this.height * 3) {
+                            this.safeSetState({
+                                cachedImagePath,
+                                resized: false
+                            });
                             return
+                        } else {
+                            newWidth = this.width * 3
+                            newHeight = this.height * 3
                         }
 
-                        let scale = width / height
-                        if (width < SCREEN.width) {
-                            this.safeSetState({
-                                cachedImagePath
-                            });
-                            return;
+                        if (newWidth === 0 && newHeight !== 0) {
+                            newWidth = newHeight
+                        } else if (newWidth !== 0 && newHeight === 0) {
+                            newHeight = newWidth
+                        } else if (newWidth === 0 && newHeight === 0) {
+                            newWidth = SCREEN.width
+                            newHeight = (width !== 0 && height !== 0) ? newWidth * height / width : SCREEN.height
                         }
 
-                        newWidth = Math.min(width, SCREEN.width)
-                        newHeight = newWidth / scale
+                        let saveUrl = `${url}_${newWidth}_${newHeight}`
 
-                        ImageResizer.createResizedImage(imageUri, newWidth, newHeight, compressFormat, quality, rotation, outputPath).then((response) => {
-                            // response.uri is the URI of the new image that can now be displayed, uploaded...
-                            // response.path is the path of the new image
-                            // response.name is the name of the new image with the extension
-                            // response.size is the size of the new image
+                        imageCacheManager.getImageResize(saveUrl, options)
+                            .then(res => {
+                                this.safeSetState({
+                                    cachedImagePath: res
+                                });
+                                return
+                            })
+                            .catch(err => {
+                                ImageResizer.createResizedImage(imageUri, newWidth, newHeight, compressFormat, quality, rotation, outputPath).then((response) => {
+                                    // response.uri is the URI of the new image that can now be displayed, uploaded...
+                                    // response.path is the path of the new image
+                                    // response.name is the name of the new image with the extension
+                                    // response.size is the size of the new image
+                                    // console.log('ImageResizer', response, imageUri)
+                                    let seedPath = response.path
+                                    imageCacheManager.seedAndCacheUrl(saveUrl, seedPath, options)
+                                        .then(res => {
+                                            // console.log('seedAndCacheUrl', res)
+                                        })
 
-                            this.safeSetState({
-                                cachedImagePath: response.path
+                                    this.safeSetState({
+                                        cachedImagePath: response.path,
+                                        resized: true
+                                    });
+                                }).catch((err) => {
+                                    console.log('catch', err)
+                                });
                             });
-                        }).catch((err) => {
-                            console.log('catch', err)
-                        });
                     });
                 } else {
                     this.safeSetState({
-                        cachedImagePath
+                        cachedImagePath,
+                        resized: false
                     });
                 }
             })
@@ -204,29 +234,51 @@ class CachedImage extends React.Component {
             });
     }
 
+    _onLayout = ({ width, height }) => {
+        if (this.width && this.height) {
+            if ((Math.abs(this.width - width) <= 2) && (Math.abs(this.height - height) <= 2)) {
+                return
+            }
+        }
+        // console.log('_onLayout', width, height)
+
+        this.width = width
+        this.height = height
+        this.processSource(this.props.source);
+    }
+
     render() {
         if (this.state.isCacheable && !this.state.cachedImagePath) {
-            return this.renderLoader();
+            return (
+                <View
+                    onLayout={(event) => this._onLayout({ width: Math.round(event.nativeEvent.layout.width), height: Math.round(event.nativeEvent.layout.height) })}
+                    style={{ flex: 1, width: undefined, height: undefined }}
+                >
+                    {this.renderLoader()}
+                </View>
+            )
         }
+
         const props = getImageProps(this.props);
         const style = this.props.style || styles.image;
         const source = (this.state.isCacheable && this.state.cachedImagePath) ? {
             uri: 'file://' + this.state.cachedImagePath
         } : this.props.source;
+
         if (this.props.fallbackSource && !this.state.cachedImagePath) {
             return this.props.renderImage({
                 ...props,
                 key: `${props.key || source.uri}error`,
                 style,
                 source: this.props.fallbackSource
-            });
+            })
         }
         return this.props.renderImage({
             ...props,
             key: props.key || source.uri,
             style,
             source
-        });
+        })
     }
 
     renderLoader() {

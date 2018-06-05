@@ -66,6 +66,37 @@ module.exports = (defaultOptions = {}, urlCache = MemoryCache, fs = fsUtils, pat
             });
     }
 
+    function getCacheUrlResize(url, options, getCachedFile) {
+        // allow CachedImage to provide custom options
+        _.defaults(options, defaultOptions);
+        // cacheableUrl contains only the needed query params
+        const cacheableUrl = path.getCacheableUrl(url, options.useQueryParamsInCacheKey);
+
+        return urlCache.get(cacheableUrl)
+            .then(fileRelativePath => {
+                if (!fileRelativePath) {
+                    // console.log('ImageCacheManager: url cache miss', cacheableUrl);
+                    throw new Error('URL expired or not in cache');
+                }
+                // console.log('ImageCacheManager: url cache hit', cacheableUrl);
+                const cachedFilePath = `${options.cacheLocation}/${fileRelativePath}`;
+
+                return fs.exists(cachedFilePath)
+                    .then((exists) => {
+                        if (exists) {
+                            return cachedFilePath
+                        } else {
+                            throw new Error('file under URL stored in url cache doesn\'t exsts');
+                        }
+                    });
+            })
+            // url is not found in the cache or is expired
+            .catch(() => {
+                // console.log('NOT EXSTS')
+                throw new Error('URL expired or not in cache');
+            });
+    }
+
     return {
 
         /**
@@ -79,6 +110,19 @@ module.exports = (defaultOptions = {}, urlCache = MemoryCache, fs = fsUtils, pat
                 url,
                 options,
                 filePath => fs.downloadFile(url, filePath, options.headers)
+            );
+        },
+        
+        /**
+         * download an image and cache the result according to the given options
+         * @param url
+         * @param options
+         * @returns {Promise}
+         */
+        getImageResize(url, options = {}) {
+            return getCacheUrlResize(
+                url,
+                options
             );
         },
 

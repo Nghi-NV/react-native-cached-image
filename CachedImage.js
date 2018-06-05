@@ -208,6 +208,9 @@ class CachedImage extends React.Component {
                                         .then(res => {
                                             // console.log('seedAndCacheUrl', res)
                                         })
+                                        .catch(err => {
+                                            // console.log('error copy file')
+                                        })
 
                                     this.safeSetState({
                                         cachedImagePath: response.path,

@@ -166,7 +166,7 @@ class CachedImage extends React.Component {
                     let rotation = 0
                     let outputPath = undefined
 
-                    Image.getSize(sourceImage, (width, height) => {
+                    Image.getSize(url, (width, height) => {
                         if (width <= this.width * 3 || height <= this.height * 3) {
                             this.safeSetState({
                                 cachedImagePath,

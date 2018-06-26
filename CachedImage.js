@@ -83,6 +83,7 @@ class CachedImage extends React.Component {
         this.handleConnectivityChange = this.handleConnectivityChange.bind(this);
         this.processSource = this.processSource.bind(this);
         this.renderLoader = this.renderLoader.bind(this);
+        this.saveUrl = null;
     }
 
     componentWillMount() {
@@ -98,7 +99,6 @@ class CachedImage extends React.Component {
     }
 
     componentWillUnmount() {
-
         if (this.state.resized && this.state.cachedImagePath) {
             fsUtils.deleteFile(this.state.cachedImagePath)
         }
@@ -111,6 +111,22 @@ class CachedImage extends React.Component {
         if (!_.isEqual(this.props.source, nextProps.source)) {
             this.processSource(nextProps.source);
         }
+    }
+
+    shouldComponentUpdate(nextProps, nextState) {
+        if (this.state.cachedImagePath !== nextState.cachedImagePath) {
+            return true
+        }
+
+        if (this.state.isCacheable !== nextState.isCacheable) {
+            return true
+        }
+
+        if (this.props.source !== nextProps.source) {
+            return true
+        }
+
+        return false
     }
 
     setNativeProps(nativeProps) {
@@ -149,7 +165,6 @@ class CachedImage extends React.Component {
     }
 
     processSource(source) {
-
         const url = _.get(source, ['uri'], null);
         const options = this.getImageCacheManagerOptions();
         const imageCacheManager = this.getImageCacheManager();
@@ -189,6 +204,16 @@ class CachedImage extends React.Component {
 
                         let saveUrl = `${url}_${newWidth}_${newHeight}`
 
+                        if (newWidth > SCREEN.width) {
+                            saveUrl = `${url}_lagre_size`
+                        }
+
+                        if (this.saveUrl !== saveUrl) {
+                            this.saveUrl = saveUrl
+                        } else {
+                            return
+                        }
+
                         imageCacheManager.getImageResize(saveUrl, options)
                             .then(res => {
                                 this.safeSetState({
@@ -209,9 +234,8 @@ class CachedImage extends React.Component {
                                             // console.log('seedAndCacheUrl', res)
                                         })
                                         .catch(err => {
-                                            // console.log('error copy file')
+                                            console.log('error copy file', err)
                                         })
-
                                     this.safeSetState({
                                         cachedImagePath: response.path,
                                         resized: true
@@ -221,6 +245,7 @@ class CachedImage extends React.Component {
                                 });
                             });
                     });
+
                 } else {
                     this.safeSetState({
                         cachedImagePath,
@@ -229,7 +254,7 @@ class CachedImage extends React.Component {
                 }
             })
             .catch(err => {
-                // console.warn(err);
+                console.log('errror', err);
                 this.safeSetState({
                     cachedImagePath: null,
                     isCacheable: false
@@ -243,10 +268,10 @@ class CachedImage extends React.Component {
                 return
             }
         }
-        // console.log('_onLayout', width, height)
 
         this.width = width
         this.height = height
+
         this.processSource(this.props.source);
     }
 
